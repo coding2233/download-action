@@ -3,12 +3,12 @@ name: Download and Upload File
 on:
   workflow_dispatch:
     inputs:
-      file_urls:
-        description: '要下载的文件URL（多个URL请用换行分隔）'
+      file_url:
+        description: '要下载的文件URL'
         required: true
         type: string
-      artifact_name:
-        description: 'Artifacts名称（可选）'
+      file_name:
+        description: '保存的文件名（可选）'
         required: false
         type: string
         default: ''
@@ -28,87 +28,47 @@ jobs:
     - name: 显示下载URL信息
       run: |
         echo "=========================================="
-        echo "下载URL列表:"
-        echo "${{ inputs.file_urls }}"
+        echo "下载URL: ${{ inputs.file_url }}"
         echo "=========================================="
         
-    - name: 下载多个文件
+    - name: 下载文件
       run: |
-        # 将URL列表保存到临时文件
-        echo "${{ inputs.file_urls }}" > urls.txt
-        
-        # 初始化计数器和失败标志
-        success_count=0
-        fail_count=0
-        total_count=0
-        
-        # 逐行读取URL并下载
-        while IFS= read -r url; do
-          # 跳过空行
-          if [ -z "$url" ]; then
-            continue
+        FILE_NAME="${{ inputs.file_name }}"
+        # 如果文件名为空，直接从URL中提取文件名
+        if [ -z "$FILE_NAME" ]; then
+          URL_FILENAME=$(basename "${{ inputs.file_url }}")
+          FILE_NAME="$URL_FILENAME"
+        # 如果文件名没有扩展名，尝试从URL中提取
+        elif [[ "$FILE_NAME" != *.* ]]; then
+          # 从URL中提取文件名和扩展名
+          URL_FILENAME=$(basename "${{ inputs.file_url }}")
+          if [[ "$URL_FILENAME" == *.* ]]; then
+            FILE_NAME="${FILE_NAME}.${URL_FILENAME##*.}"
           fi
-          
-          total_count=$((total_count + 1))
-          echo "处理URL $total_count: $url"
-          
-          # 从URL中提取文件名
-          filename=$(basename "$url")
-          
-          # 如果文件名为空，生成一个默认名称
-          if [ -z "$filename" ] || [ "$filename" = "/" ]; then
-            filename="file_$total_count"
-          fi
-          
-          echo "下载文件: $filename"
-          
-          # 下载文件
-          if curl -L -f -o "downloads/$filename" "$url"; then
-            echo "✓ 文件下载成功: $filename"
-            success_count=$((success_count + 1))
-            
-            # 显示文件信息
-            if [ -f "downloads/$filename" ]; then
-              size=$(du -h "downloads/$filename" | cut -f1)
-              type=$(file -b "downloads/$filename")
-              echo "  - 大小: $size"
-              echo "  - 类型: $type"
-            fi
-          else
-            echo "✗ 文件下载失败: $filename"
-            fail_count=$((fail_count + 1))
-          fi
-          
-          echo "---"
-        done < urls.txt
-        
-        # 显示下载统计
-        echo "=========================================="
-        echo "下载完成统计:"
-        echo "总文件数: $total_count"
-        echo "成功: $success_count"
-        echo "失败: $fail_count"
-        echo "=========================================="
-        
-        # 如果有失败，设置退出码为1
-        if [ $fail_count -gt 0 ]; then
-          echo "警告: 有 $fail_count 个文件下载失败"
-          # 不退出，继续上传成功的文件
         fi
+        
+        echo "下载文件到: downloads/$FILE_NAME"
+        curl -L -o "downloads/$FILE_NAME" "${{ inputs.file_url }}"
+        
+        # 验证文件是否下载成功
+        if [ -f "downloads/$FILE_NAME" ]; then
+          echo "文件下载成功: $FILE_NAME"
+          echo "FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
+          echo "FILE_PATH=downloads/$FILE_NAME" >> $GITHUB_ENV
+        else
+          echo "文件下载失败"
+          exit 1
+        fi
+        
+    - name: 显示文件信息
+      run: |
+        echo "文件路径: ${{ env.FILE_PATH }}"
+        echo "文件大小: $(du -h ${{ env.FILE_PATH }} | cut -f1)"
+        echo "文件类型: $(file -b ${{ env.FILE_PATH }})"
         
     - name: 上传文件到Artifacts
-      run: |
-        # 如果artifact_name为空，使用默认名称
-        ARTIFACT_NAME="${{ inputs.artifact_name }}"
-        if [ -z "$ARTIFACT_NAME" ]; then
-          ARTIFACT_NAME="downloaded-files"
-        fi
-        echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
-        
-    - name: 执行上传
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.ARTIFACT_NAME }}
-        path: downloads/
+        name: ${{ env.FILE_NAME }}
+        path: ${{ env.FILE_PATH }}
         retention-days: 30
-        if-no-files-found: warn
