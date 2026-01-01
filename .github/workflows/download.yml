@@ -11,7 +11,7 @@ on:
         description: '保存的文件名（可选）'
         required: false
         type: string
-        default: 'downloaded-file'
+        default: ''
 
 permissions:
   contents: read
@@ -25,16 +25,25 @@ jobs:
     - name: 创建下载目录
       run: mkdir -p downloads
       
+    - name: 显示下载URL信息
+      run: |
+        echo "=========================================="
+        echo "下载URL: ${{ inputs.file_url }}"
+        echo "=========================================="
+        
     - name: 下载文件
       run: |
         FILE_NAME="${{ inputs.file_name }}"
+        # 如果文件名为空，直接从URL中提取文件名
+        if [ -z "$FILE_NAME" ]; then
+          URL_FILENAME=$(basename "${{ inputs.file_url }}")
+          FILE_NAME="$URL_FILENAME"
         # 如果文件名没有扩展名，尝试从URL中提取
-        if [[ "$FILE_NAME" != *.* ]]; then
+        elif [[ "$FILE_NAME" != *.* ]]; then
           # 从URL中提取文件名和扩展名
           URL_FILENAME=$(basename "${{ inputs.file_url }}")
           if [[ "$URL_FILENAME" == *.* ]]; then
-            FILE_NAME="${FILE_NAME}${URL_FILENAME##*.}"
-            FILE_NAME="${FILE_NAME%.*}.${URL_FILENAME##*.}"
+            FILE_NAME="${FILE_NAME}.${URL_FILENAME##*.}"
           fi
         fi
         
