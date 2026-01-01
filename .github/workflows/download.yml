@@ -1,0 +1,61 @@
+name: Download and Upload File
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_url:
+        description: '要下载的文件URL'
+        required: true
+        type: string
+      file_name:
+        description: '保存的文件名（可选）'
+        required: false
+        type: string
+        default: 'downloaded-file'
+
+jobs:
+  download-and-upload:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 创建下载目录
+      run: mkdir -p downloads
+      
+    - name: 下载文件
+      run: |
+        FILE_NAME="${{ inputs.file_name }}"
+        # 如果文件名没有扩展名，尝试从URL中提取
+        if [[ "$FILE_NAME" != *.* ]]; then
+          # 从URL中提取文件名和扩展名
+          URL_FILENAME=$(basename "${{ inputs.file_url }}")
+          if [[ "$URL_FILENAME" == *.* ]]; then
+            FILE_NAME="${FILE_NAME}${URL_FILENAME##*.}"
+            FILE_NAME="${FILE_NAME%.*}.${URL_FILENAME##*.}"
+          fi
+        fi
+        
+        echo "下载文件到: downloads/$FILE_NAME"
+        curl -L -o "downloads/$FILE_NAME" "${{ inputs.file_url }}"
+        
+        # 验证文件是否下载成功
+        if [ -f "downloads/$FILE_NAME" ]; then
+          echo "文件下载成功: $FILE_NAME"
+          echo "FILE_NAME=$FILE_NAME" >> $GITHUB_ENV
+          echo "FILE_PATH=downloads/$FILE_NAME" >> $GITHUB_ENV
+        else
+          echo "文件下载失败"
+          exit 1
+        fi
+        
+    - name: 显示文件信息
+      run: |
+        echo "文件路径: ${{ env.FILE_PATH }}"
+        echo "文件大小: $(du -h ${{ env.FILE_PATH }} | cut -f1)"
+        echo "文件类型: $(file -b ${{ env.FILE_PATH }})"
+        
+    - name: 上传文件到Artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: ${{ env.FILE_NAME }}
+        path: ${{ env.FILE_PATH }}
+        retention-days: 30
